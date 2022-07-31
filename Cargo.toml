@@ -1,8 +1,18 @@
 [package]
-name = "Lifetime"
+name = "lifetime"
+description = "An interactive Game of Life implementation using Vulkano."
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license-file = "LICENSE.md"
+authors = ["Lev Kruglyak <lev.kruglyak2014@gmail.com>"]
 
 [dependencies]
+egui = "0.18"
+egui_winit_vulkano = "0.18"
+egui_demo_lib = "0.18"
+vulkano = "0.30"
+vulkano-util = "0.30"
+vulkano-win = "0.30"
+vulkano-shaders = "0.30"
+winit = "0.26"
+bytemuck = { version = "1.7", features = ["derive", "extern_crate_std", "min_const_generics"] }
