@@ -16,4 +16,5 @@ vulkano-win = "0.30"
 vulkano-shaders = "0.30"
 winit = "0.26"
 lazy_static = "1.4"
+rand = "0.8"
 bytemuck = { version = "1.7", features = ["derive", "extern_crate_std", "min_const_generics"] }

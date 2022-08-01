@@ -3,10 +3,10 @@ use std::sync::Arc;
 use bytemuck::{Pod, Zeroable};
 use egui_winit_vulkano::Gui;
 use vulkano::{
-    buffer::{BufferUsage, CpuAccessibleBuffer, TypedBufferAccess, CpuBufferPool},
+    buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool, TypedBufferAccess},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
-        RenderPassBeginInfo, SubpassContents
+        RenderPassBeginInfo, SubpassContents,
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
     device::{Device, Queue},
@@ -60,7 +60,8 @@ impl FinalRenderPass {
         let render_pass = Self::create_render_pass(context.device(), format);
         let pipeline = Self::create_pipeline(context.device(), render_pass.clone());
         let (vertex_buffer, index_buffer) = Self::create_viewport_quad(context.device());
-        let uniform_buffer = CpuBufferPool::<ViewportTransform>::new(context.device(), BufferUsage::all());
+        let uniform_buffer =
+            CpuBufferPool::<ViewportTransform>::new(context.device(), BufferUsage::all());
 
         Self {
             device: context.device(),
@@ -178,8 +179,8 @@ impl FinalRenderPass {
         let sampler = Sampler::new(
             self.graphics_queue.device().clone(),
             SamplerCreateInfo {
-                mag_filter: Filter::Nearest,
-                min_filter: Filter::Nearest,
+                mag_filter: Filter::Linear,
+                min_filter: Filter::Linear,
                 address_mode: [SamplerAddressMode::ClampToBorder; 3],
                 ..Default::default()
             },
@@ -193,13 +194,13 @@ impl FinalRenderPass {
             layout.clone(),
             [
                 WriteDescriptorSet::buffer(0, uniform_buffer_subbuffer),
-                WriteDescriptorSet::image_view_sampler(1, viewport_view.clone(), sampler)
+                WriteDescriptorSet::image_view_sampler(1, viewport_view.clone(), sampler),
             ],
         )
         .unwrap()
     }
 
-    fn create_render_pass(device: Arc<Device>, format: Format) -> Arc<RenderPass> { 
+    fn create_render_pass(device: Arc<Device>, format: Format) -> Arc<RenderPass> {
         vulkano::ordered_passes_renderpass!(
             device,
             attachments: {
@@ -333,7 +334,6 @@ layout(set = 0, binding = 1) uniform sampler2D tex;
 
 void main() {
     f_color = texture(tex, v_tex_coords);
-    f_color = vec4(v_tex_coords, 0.0, 1.0);
 }
 "
     }

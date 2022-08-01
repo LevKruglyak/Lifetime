@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use egui::Context;
 use egui_winit_vulkano::Gui;
 use lazy_static::lazy_static;
@@ -18,9 +20,13 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-use crate::final_render_pass::{FinalRenderPass, ViewportTransform};
+use crate::{
+    final_render_pass::{FinalRenderPass, ViewportTransform},
+    game_compute_pipeline::GameComputePipeline,
+};
 
 mod final_render_pass;
+mod game_compute_pipeline;
 
 lazy_static! {
     static ref INSTANCE_EXTENSIONS: InstanceExtensions = InstanceExtensions {
@@ -42,6 +48,8 @@ const SWAPCHAIN_FORMAT: Format = Format::B8G8R8A8_SRGB;
 
 const WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(700.0, 500.0);
 const WINDOW_TITLE: &str = "Conway's Game of Life";
+
+const GRID_SIZE: u32 = 2000;
 
 fn main() {
     // Create vulkano context
@@ -76,18 +84,9 @@ fn main() {
     );
     let window_renderer = windows.get_primary_renderer_mut().unwrap();
 
+    let mut game_compute_pipeline =
+        GameComputePipeline::new(&vulkano_context, [GRID_SIZE, GRID_SIZE]);
     let final_render_pass = FinalRenderPass::new(&vulkano_context, SWAPCHAIN_FORMAT);
-    let viewport_view_id = 0;
-    window_renderer.add_additional_image_view(
-        viewport_view_id,
-        SWAPCHAIN_FORMAT,
-        ImageUsage { 
-            sampled: true,
-            storage: false,
-            color_attachment: true,
-            ..ImageUsage::none()
-        },
-    );
 
     // Create gui context
     let mut gui = Gui::new_with_subpass(
@@ -98,16 +97,19 @@ fn main() {
 
     let mut viewport_transform = ViewportTransform::default();
 
+    let mut counter = 0;
+    let mut fps = 60.0;
+    let mut frame_time = Duration::default();
+
     // Run the event loop to keep window open
     event_loop.run(move |event, _, control_flow| {
         let window_renderer = windows.get_primary_renderer_mut().unwrap();
-        
+
         match event {
             Event::WindowEvent { event, window_id } => {
                 if window_id == main_window_id {
                     let pass_events_to_app = !gui.update(&event);
-                    if pass_events_to_app {
-                    }
+                    if pass_events_to_app {}
 
                     match event {
                         WindowEvent::Resized(_) => {
@@ -125,32 +127,53 @@ fn main() {
             }
             Event::RedrawRequested(window_id) => {
                 if window_id == main_window_id {
+                    let timer = Instant::now();
+
                     // Create immediate ui
                     let context = gui.context();
                     gui.immediate_ui(|_| {
                         egui::SidePanel::left("left_panel")
-                            .min_width(200.0)
+                            .min_width(300.0)
                             .show(&context, |ui| {
-                            
-                            ui.vertical_centered(|ui| {
-                                ui.heading("Settings");
-                            });
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.label("Offset X:");
-                                ui.add(egui::Slider::new(&mut viewport_transform.offset[0], -1.0..=1.0));
-                            });
+                                ui.vertical_centered(|ui| {
+                                    ui.heading("Settings");
+                                });
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.label("Offset X:");
+                                    ui.add(egui::Slider::new(
+                                        &mut viewport_transform.offset[0],
+                                        -10.0..=10.0,
+                                    ));
+                                });
 
-                            ui.horizontal(|ui| {
-                                ui.label("Offset Y:");
-                                ui.add(egui::Slider::new(&mut viewport_transform.offset[1], -1.0..=1.0));
-                            });
+                                ui.horizontal(|ui| {
+                                    ui.label("Offset Y:");
+                                    ui.add(egui::Slider::new(
+                                        &mut viewport_transform.offset[1],
+                                        -10.0..=10.0,
+                                    ));
+                                });
 
-                            ui.horizontal(|ui| {
-                                ui.label("Scale:");
-                                ui.add(egui::Slider::new(&mut viewport_transform.scale, 0.1..=50.0));
+                                ui.horizontal(|ui| {
+                                    ui.label("Scale:");
+                                    ui.add(egui::Slider::new(
+                                        &mut viewport_transform.scale,
+                                        0.1..=50.0,
+                                    ));
+                                });
+                                if ui.button("Reset").clicked() {
+                                    game_compute_pipeline = GameComputePipeline::new(&vulkano_context, [GRID_SIZE, GRID_SIZE]);
+                                }
+                                ui.separator();
+                                ui.label(format!("FPS: {}", f32::floor(fps)));
+
+                                counter += 1;
+                                if counter == 10 {
+                                    counter = 0;
+                                    fps = 1000.0 / frame_time.as_millis() as f32;
+                                }
                             });
-                        });
                     });
 
                     // Calculate viwport so as not to render behind egui components
@@ -160,27 +183,34 @@ fn main() {
                     );
 
                     // Update image aspect ratio
-                    viewport_transform.aspect_ratio = viewport_bounds.dimensions[0] / viewport_bounds.dimensions[1];
+                    viewport_transform.aspect_ratio =
+                        viewport_bounds.dimensions[0] / viewport_bounds.dimensions[1];
 
                     let before_pipeline_future = window_renderer
                         .acquire()
                         .expect("failed to acquire window renderer future");
-                    let viewport_view = window_renderer.get_additional_image_view(viewport_view_id);
 
                     // Render viewport
+                    let after_compute_future = game_compute_pipeline.compute(
+                        before_pipeline_future,
+                        [1.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    );
 
                     // Render gui
                     let after_gui_future = final_render_pass.render(
-                        before_pipeline_future,
+                        after_compute_future,
                         window_renderer.swapchain_image_view(),
                         &mut gui,
-                        viewport_view,
+                        game_compute_pipeline.view(),
                         viewport_bounds,
                         viewport_transform,
                     );
 
                     // Present to surface
                     window_renderer.present(after_gui_future, true);
+
+                    frame_time = Instant::now().duration_since(timer);
                 }
             }
             Event::MainEventsCleared => {
